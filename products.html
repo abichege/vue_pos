@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>POS – Products</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"/>
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css"/>
+  <style>
+    body { background: #f0f2f5; }
+    .navbar { background: #1a1a2e; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-dark px-4 py-2 mb-4">
+    <span class="navbar-brand fw-bold">🛒 POS System</span>
+    <div class="d-flex align-items-center gap-3">
+      <a href="products.html" class="text-white text-decoration-none">Products</a>
+      <a href="sales.html"    class="text-white text-decoration-none">Sales</a>
+      <span class="text-white-50 small">{{ userName }}</span>
+      <button class="btn btn-sm btn-outline-light" @click="logout">Logout</button>
+    </div>
+  </nav>
+
+  <div class="container">
+
+    <div v-if="errorMsg"   class="alert alert-danger  py-2">{{ errorMsg }}</div>
+    <div v-if="successMsg" class="alert alert-success py-2">{{ successMsg }}</div>
+
+    <!-- Add Product Form -->
+    <div class="card shadow-sm mb-4">
+      <div class="card-header fw-bold">Add Product</div>
+      <div class="card-body">
+        <div class="row g-2">
+          <div class="col-md-5">
+            <input v-model="name" type="text" class="form-control" placeholder="Product name"/>
+          </div>
+          <div class="col-md-4">
+            <input v-model="amount" type="number" class="form-control" placeholder="Amount (KES)" min="0"/>
+          </div>
+          <div class="col-md-3">
+            <button class="btn btn-primary w-100" @click="addProduct" :disabled="loading">
+              <span v-if="loading" class="spinner-border spinner-border-sm me-1"></span>
+              Add Product
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Products Table -->
+    <div class="card shadow-sm">
+      <div class="card-header fw-bold">Products</div>
+      <div class="card-body">
+        <table id="productsTable" class="table table-striped table-hover w-100">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Amount (KES)</th>
+              <th>Created At</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(product, index) in products" :key="product.id">
+              <td>{{ index + 1 }}</td>
+              <td>{{ product.name }}</td>
+              <td>{{ product.amount.toLocaleString() }}</td>
+              <td>{{ formatDate(product.created_at) }}</td>
+              <td>
+                <button class="btn btn-sm btn-success" @click="makeSale(product)">Sell</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@2.7.14/dist/vue.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script>
+  const BASE_URL = "http://127.0.0.1:5000"
+
+  new Vue({
+    el: "#app",
+    data: {
+      products: [],
+      name: "",
+      amount: "",
+      errorMsg: "",
+      successMsg: "",
+      loading: false,
+      userName: ""
+    },
+    mounted() {
+      if (!localStorage.getItem("token")) {
+        window.location.href = "login.html"
+        return
+      }
+      const user = JSON.parse(localStorage.getItem("user") || "{}")
+      this.userName = user.full_name || user.email || ""
+      this.getProducts()
+    },
+    methods: {
+      getHeaders() {
+        const token = localStorage.getItem("token")
+        return { Authorization: `Bearer ${token}` }
+      },
+      async getProducts() {
+        try {
+          const res = await axios.get(`${BASE_URL}/products`, { headers: this.getHeaders() })
+          this.products = res.data.data
+          this.$nextTick(() => this.initTable())
+        } catch (err) {
+          if (err.response?.status === 401) {
+            window.location.href = "login.html"
+          } else {
+            this.errorMsg = err.response?.data?.error || "Failed to load products"
+          }
+        }
+      },
+      initTable() {
+        if ($.fn.DataTable.isDataTable("#productsTable")) {
+          $("#productsTable").DataTable().destroy()
+        }
+        this.$nextTick(() => {
+          $("#productsTable").DataTable({ pageLength: 10, order: [[0, "desc"]] })
+        })
+      },
+      async addProduct() {
+        this.errorMsg   = ""
+        this.successMsg = ""
+
+        if (this.name === "" || this.amount === "") {
+          this.errorMsg = "All fields are required"
+          return
+        }
+
+        this.loading = true
+        try {
+          await axios.post(`${BASE_URL}/products`, {
+            name: this.name,
+            amount: parseFloat(this.amount)
+          }, { headers: this.getHeaders() })
+
+          this.successMsg = "Product added successfully"
+          this.name   = ""
+          this.amount = ""
+          setTimeout(() => window.location.href = "products.html", 1000)
+          await this.getProducts()
+        } catch (err) {
+          this.errorMsg = err.response?.data?.error || "Failed to add product"
+        } finally {
+          this.loading = false
+        }
+      },
+      async makeSale(product) {
+        if (!confirm(`Create a sale for "${product.name}" (KES ${product.amount.toLocaleString()})?`)) return
+
+        try {
+          await axios.post(`${BASE_URL}/sales`, {
+            product_id: product.id
+          }, { headers: this.getHeaders() })
+
+          this.successMsg = `Sale created for ${product.name}`
+          setTimeout(() => window.location.href = "sales.html", 800)
+        } catch (err) {
+          this.errorMsg = err.response?.data?.error || "Failed to create sale"
+        }
+      },
+      formatDate(dt) {
+        return new Date(dt).toLocaleString()
+      },
+      logout() {
+        localStorage.removeItem("token")
+        localStorage.removeItem("user")
+        window.location.href = "login.html"
+      }
+    }
+  })
+</script>
+</body>
+</html>
