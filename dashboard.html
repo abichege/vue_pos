@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>POS – Dashboard</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"/>
+  <style>
+    body { background: #f0f2f5; }
+    .navbar { background: #1a1a2e; }
+    .stat-card { border-left: 4px solid; border-radius: 8px; }
+    .stat-card.sales   { border-color: #0d6efd; }
+    .stat-card.revenue { border-color: #198754; }
+    .stat-card.stock   { border-color: #fd7e14; }
+    .stat-card.pending { border-color: #ffc107; }
+    .stat-value { font-size: 1.8rem; font-weight: 700; }
+    .chart-card { border-radius: 10px; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-dark px-4 py-2 mb-4">
+    <span class="navbar-brand fw-bold">🛒 POS System</span>
+    <div class="d-flex align-items-center gap-3">
+      <a href="dashboard.html" class="text-white text-decoration-none fw-semibold">Dashboard</a>
+      <a href="products.html"  class="text-white text-decoration-none">Products</a>
+      <a href="stock.html"     class="text-white text-decoration-none">Stock</a>
+      <a href="sales.html"     class="text-white text-decoration-none">Sales</a>
+      <span class="text-white-50 small">{{ userName }}</span>
+      <button class="btn btn-sm btn-outline-light" @click="logout">Logout</button>
+    </div>
+  </nav>
+
+  <div class="container-fluid px-4">
+
+    <div v-if="errorMsg" class="alert alert-danger py-2">{{ errorMsg }}</div>
+
+    <!-- Summary Cards -->
+    <div class="row g-3 mb-4" v-if="!loading">
+      <div class="col-sm-6 col-xl-3">
+        <div class="card shadow-sm stat-card sales p-3">
+          <div class="text-muted small mb-1">Total Sales</div>
+          <div class="stat-value text-primary">{{ stats.total_sales }}</div>
+          <div class="text-muted small">transactions</div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-xl-3">
+        <div class="card shadow-sm stat-card revenue p-3">
+          <div class="text-muted small mb-1">Total Revenue</div>
+          <div class="stat-value text-success">KES {{ formatNumber(stats.total_revenue) }}</div>
+          <div class="text-muted small">from paid sales</div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-xl-3">
+        <div class="card shadow-sm stat-card stock p-3">
+          <div class="text-muted small mb-1">Low / Out of Stock</div>
+          <div class="stat-value text-warning">{{ stats.low_stock_count }}</div>
+          <div class="text-muted small">products need restocking</div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-xl-3">
+        <div class="card shadow-sm stat-card pending p-3">
+          <div class="text-muted small mb-1">Pending Payments</div>
+          <div class="stat-value text-warning">{{ stats.pending_count }}</div>
+          <div class="text-muted small">awaiting confirmation</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading spinner -->
+    <div v-if="loading" class="text-center py-5">
+      <div class="spinner-border text-primary"></div>
+      <div class="mt-2 text-muted">Loading dashboard…</div>
+    </div>
+
+    <!-- Charts Row 1 -->
+    <div class="row g-3 mb-4" v-if="!loading">
+      <div class="col-lg-6">
+        <div class="card shadow-sm chart-card p-3">
+          <canvas id="salesByProductChart" height="260"></canvas>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="card shadow-sm chart-card p-3">
+          <canvas id="salesPerDayChart" height="260"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row 2 -->
+    <div class="row g-3 mb-4" v-if="!loading">
+      <div class="col-lg-6">
+        <div class="card shadow-sm chart-card p-3">
+          <canvas id="revenueByProductChart" height="260"></canvas>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="card shadow-sm chart-card p-3">
+          <canvas id="stockLevelsChart" height="260"></canvas>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@2.7.14/dist/vue.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+  const BASE_URL = "http://127.0.0.1:5000"
+
+  const COLORS = [
+    "#0d6efd","#198754","#fd7e14","#dc3545",
+    "#6f42c1","#20c997","#0dcaf0","#ffc107"
+  ]
+
+  new Vue({
+    el: "#app",
+    data: {
+      stats:    {},
+      charts:   {},
+      loading:  true,
+      errorMsg: "",
+      userName: ""
+    },
+    mounted() {
+      if (!localStorage.getItem("token")) {
+        window.location.href = "login.html"
+        return
+      }
+      const user = JSON.parse(localStorage.getItem("user") || "{}")
+      this.userName = user.full_name || user.email || ""
+      this.loadDashboard()
+    },
+    methods: {
+      getHeaders() {
+        const token = localStorage.getItem("token")
+        return { Authorization: `Bearer ${token}` }
+      },
+      formatNumber(n) {
+        return (n || 0).toLocaleString()
+      },
+      async loadDashboard() {
+        try {
+          const res = await axios.get(`${BASE_URL}/dashboard`, { headers: this.getHeaders() })
+          this.stats   = res.data.stats
+          this.loading = false
+          this.$nextTick(() => this.renderCharts(res.data.charts))
+        } catch (err) {
+          this.loading = false
+          if (err.response?.status === 401) {
+            window.location.href = "login.html"
+          } else {
+            this.errorMsg = err.response?.data?.error || "Failed to load dashboard"
+          }
+        }
+      },
+      renderCharts(data) {
+        // Sales by product (bar)
+        new Chart(document.getElementById("salesByProductChart"), {
+          type: "bar",
+          data: {
+            labels: data.sales_by_product.labels,
+            datasets: [{
+              label: "Sales Count",
+              data:  data.sales_by_product.values,
+              backgroundColor: COLORS
+            }]
+          },
+          options: {
+            plugins: { title: { display: true, text: "Sales Count by Product" } },
+            scales:  { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+          }
+        })
+
+        // Sales per day (line)
+        new Chart(document.getElementById("salesPerDayChart"), {
+          type: "line",
+          data: {
+            labels: data.sales_per_day.labels,
+            datasets: [{
+              label: "Sales",
+              data:  data.sales_per_day.values,
+              borderColor: "#0d6efd",
+              backgroundColor: "rgba(13,110,253,0.1)",
+              fill: true,
+              tension: 0.4
+            }]
+          },
+          options: {
+            plugins: { title: { display: true, text: "Sales Per Day (Last 30 Days)" } },
+            scales:  { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+          }
+        })
+
+        // Revenue by product (bar)
+        new Chart(document.getElementById("revenueByProductChart"), {
+          type: "bar",
+          data: {
+            labels: data.revenue_by_product.labels,
+            datasets: [{
+              label: "Revenue (KES)",
+              data:  data.revenue_by_product.values,
+              backgroundColor: COLORS
+            }]
+          },
+          options: {
+            plugins: { title: { display: true, text: "Revenue by Product (KES)" } },
+            scales:  { y: { beginAtZero: true } }
+          }
+        })
+
+        // Stock levels (horizontal bar)
+        new Chart(document.getElementById("stockLevelsChart"), {
+          type: "bar",
+          data: {
+            labels: data.stock_levels.labels,
+            datasets: [{
+              label: "Quantity in Stock",
+              data:  data.stock_levels.values,
+              backgroundColor: data.stock_levels.values.map(v =>
+                v === 0 ? "#dc3545" : v <= 5 ? "#fd7e14" : "#198754"
+              )
+            }]
+          },
+          options: {
+            indexAxis: "y",
+            plugins: { title: { display: true, text: "Current Stock Levels" } },
+            scales:  { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
+          }
+        })
+      },
+      logout() {
+        localStorage.removeItem("token")
+        localStorage.removeItem("user")
+        window.location.href = "login.html"
+      }
+    }
+  })
+</script>
+</body>
+</html>

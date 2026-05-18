@@ -1,193 +1,416 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>POS – Products</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"/>
-  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" />
   <style>
-    body { background: #f0f2f5; }
-    .navbar { background: #1a1a2e; }
+    body {
+      background: #f0f2f5;
+    }
+
+    .navbar {
+      background: #1a1a2e;
+    }
   </style>
 </head>
+
 <body>
-<div id="app">
+  <div id="app">
 
-  <!-- Navbar -->
-  <nav class="navbar navbar-dark px-4 py-2 mb-4">
-    <span class="navbar-brand fw-bold">🛒 POS System</span>
-    <div class="d-flex align-items-center gap-3">
-      <a href="products.html" class="text-white text-decoration-none">Products</a>
-      <a href="sales.html"    class="text-white text-decoration-none">Sales</a>
-      <span class="text-white-50 small">{{ userName }}</span>
-      <button class="btn btn-sm btn-outline-light" @click="logout">Logout</button>
+    <!-- Navbar -->
+    <nav class="navbar navbar-dark px-4 py-2 mb-4">
+      <span class="navbar-brand fw-bold">🛒 POS System</span>
+      <div class="d-flex align-items-center gap-3">
+        <a href="dashboard.html" class="text-white text-decoration-none">Dashboard</a>
+        <a href="products.html" class="text-white text-decoration-none">Products</a>
+        <a href="stock.html" class="text-white text-decoration-none">Stock</a>
+        <a href="sales.html" class="text-white text-decoration-none">Sales</a>
+        <span class="text-white-50 small">{{ userName }}</span>
+        <button class="btn btn-sm btn-outline-light" @click="logout">Logout</button>
+      </div>
+    </nav>
+
+    <div class="container">
+      <div v-if="errorMsg" class="alert alert-danger  py-2">{{ errorMsg }}</div>
+      <div v-if="successMsg" class="alert alert-success py-2">{{ successMsg }}</div>
+
+      <!-- Add Product -->
+      <div class="card shadow-sm mb-4">
+        <div class="card-header fw-bold">Add Product</div>
+        <div class="card-body">
+          <!-- Hidden honeypot inputs to absorb browser autofill -->
+          <input type="text" style="display:none" aria-hidden="true" />
+          <input type="password" style="display:none" aria-hidden="true" />
+          <div class="row g-2">
+            <div class="col-md-5">
+              <input v-model="name" type="text" class="form-control" placeholder="Product name" autocomplete="off"
+                name="product-amount-field" />
+            </div>
+            <div class="col-md-4">
+              <input v-model="amount" type="number" class="form-control" placeholder="Amount (KES)" min="0"
+                autocomplete="off" name="product-amount-field" />
+            </div>
+            <div class="col-md-3">
+              <button class="btn btn-primary w-100" @click="addProduct" :disabled="loading">
+                <span v-if="loading" class="spinner-border spinner-border-sm me-1"></span>
+                Add Product
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Products Table -->
+      <div class="card shadow-sm">
+        <div class="card-header fw-bold">Products</div>
+        <div class="card-body">
+          <table id="productsTable" class="table table-striped table-hover w-100">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Amount (KES)</th>
+                <th>Created At</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(product, index) in products" :key="product.id">
+                <td>{{ index + 1 }}</td>
+                <td>{{ product.name }}</td>
+                <td>{{ product.amount.toLocaleString() }}</td>
+                <td>{{ formatDate(product.created_at) }}</td>
+                <td>
+                  <!-- Bootstrap opens each modal; @click only sets Vue data -->
+                  <button class="btn btn-sm btn-success me-1" data-bs-toggle="modal" data-bs-target="#sellModal"
+                    @click="openSellModal(product)">Sell</button>
+                  <button class="btn btn-sm btn-warning me-1" data-bs-toggle="modal" data-bs-target="#managerModal"
+                    @click="openEditFlow(product)">Edit</button>
+                  <button class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#managerModal"
+                    @click="openDeleteFlow(product)">Delete</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
-  </nav>
 
-  <div class="container">
-
-    <div v-if="errorMsg"   class="alert alert-danger  py-2">{{ errorMsg }}</div>
-    <div v-if="successMsg" class="alert alert-success py-2">{{ successMsg }}</div>
-
-    <!-- Add Product Form -->
-    <div class="card shadow-sm mb-4">
-      <div class="card-header fw-bold">Add Product</div>
-      <div class="card-body">
-        <div class="row g-2">
-          <div class="col-md-5">
-            <input v-model="name" type="text" class="form-control" placeholder="Product name"/>
+    <!-- ── Manager Password Modal ── -->
+    <div class="modal fade" id="managerModal" tabindex="-1">
+      <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Manager Authorisation</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
-          <div class="col-md-4">
-            <input v-model="amount" type="number" class="form-control" placeholder="Amount (KES)" min="0"/>
+          <div class="modal-body">
+            <p class="text-muted small mb-2">
+              Enter manager password to <strong>{{ managerAction }}</strong>
+              <em>{{ managerTargetName }}</em>.
+            </p>
+            <input v-model="managerPassword" type="password" class="form-control" placeholder="Manager password"
+              @keyup.enter="confirmManagerAction" />
+            <div v-if="managerError" class="text-danger small mt-1">{{ managerError }}</div>
           </div>
-          <div class="col-md-3">
-            <button class="btn btn-primary w-100" @click="addProduct" :disabled="loading">
-              <span v-if="loading" class="spinner-border spinner-border-sm me-1"></span>
-              Add Product
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn btn-dark" @click="confirmManagerAction" :disabled="managerLoading">
+              <span v-if="managerLoading" class="spinner-border spinner-border-sm me-1"></span>
+              Confirm
             </button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Products Table -->
-    <div class="card shadow-sm">
-      <div class="card-header fw-bold">Products</div>
-      <div class="card-body">
-        <table id="productsTable" class="table table-striped table-hover w-100">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Name</th>
-              <th>Amount (KES)</th>
-              <th>Created At</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(product, index) in products" :key="product.id">
-              <td>{{ index + 1 }}</td>
-              <td>{{ product.name }}</td>
-              <td>{{ product.amount.toLocaleString() }}</td>
-              <td>{{ formatDate(product.created_at) }}</td>
-              <td>
-                <button class="btn btn-sm btn-success" @click="makeSale(product)">Sell</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+    <!-- ── Edit Product Modal ── -->
+    <div class="modal fade" id="editModal" tabindex="-1">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Edit Product</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Name</label>
+              <input v-model="editName" type="text" class="form-control" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Price (KES)</label>
+              <input v-model="editAmount" type="number" class="form-control" min="0" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn btn-warning" @click="saveEdit" :disabled="editLoading">
+              <span v-if="editLoading" class="spinner-border spinner-border-sm me-1"></span>
+              Save Changes
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
-  </div>
-</div>
+    <!-- ── Delete Confirmation Modal ── -->
+    <div class="modal fade" id="deleteModal" tabindex="-1">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header border-0">
+            <h5 class="modal-title text-danger">Delete Product</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            Are you sure you want to delete <strong>{{ deleteTarget ? deleteTarget.name : '' }}</strong>?
+            This cannot be undone.
+          </div>
+          <div class="modal-footer border-0">
+            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn btn-danger" @click="confirmDelete" :disabled="deleteLoading">
+              <span v-if="deleteLoading" class="spinner-border spinner-border-sm me-1"></span>
+              Yes, Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
-<script src="https://cdn.jsdelivr.net/npm/vue@2.7.14/dist/vue.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
-<script>
-  const BASE_URL = "http://127.0.0.1:5000"
+    <!-- ── Sell Modal ── -->
+    <div class="modal fade" id="sellModal" tabindex="-1">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              Sell — {{ sellTarget ? sellTarget.name : '' }}
+              <span v-if="sellTarget" class="text-muted fs-6 ms-2">KES {{ sellTarget.amount.toLocaleString() }}</span>
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" :disabled="sellLoading"></button>
+          </div>
+          <div class="modal-body">
+            <label class="form-label fw-semibold">Customer Phone Number</label>
+            <div class="input-group">
+              <span class="input-group-text">+254</span>
+              <input v-model="sellPhone" type="tel" class="form-control" placeholder="7XXXXXXXX" maxlength="9"
+                :disabled="sellLoading || sellStatus === 'sent'" />
+            </div>
+            <div class="form-text">Enter M-Pesa number without country code e.g. 712345678</div>
+            <div v-if="sellStatus === 'sent'" class="alert alert-info  mt-3 mb-0 py-2">📲 STK Push sent! Ask customer to
+              enter M-Pesa PIN.</div>
+            <div v-if="sellStatus === 'error'" class="alert alert-danger mt-3 mb-0 py-2">{{ sellError }}</div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal" :disabled="sellLoading">Cancel</button>
+            <button class="btn btn-success" @click="processSell" :disabled="sellLoading || sellStatus === 'sent'">
+              <span v-if="sellLoading" class="spinner-border spinner-border-sm me-1"></span>
+              {{ sellLoading ? 'Sending…' : 'Send STK Push' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
-  new Vue({
-    el: "#app",
-    data: {
-      products: [],
-      name: "",
-      amount: "",
-      errorMsg: "",
-      successMsg: "",
-      loading: false,
-      userName: ""
-    },
-    mounted() {
-      if (!localStorage.getItem("token")) {
-        window.location.href = "login.html"
-        return
-      }
-      const user = JSON.parse(localStorage.getItem("user") || "{}")
-      this.userName = user.full_name || user.email || ""
-      this.getProducts()
-    },
-    methods: {
-      getHeaders() {
-        const token = localStorage.getItem("token")
-        return { Authorization: `Bearer ${token}` }
+  </div><!-- /app -->
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@2.7.14/dist/vue.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+
+  <script>
+    const BASE_URL = "http://127.0.0.1:5000"
+    const MGR_PASSWORD = "abcdef"
+
+    new Vue({
+      el: "#app",
+      data: {
+        products: [],
+        name: "",
+        amount: "",
+        errorMsg: "",
+        successMsg: "",
+        loading: false,
+        userName: "",
+        managerPassword: "",
+        managerError: "",
+        managerLoading: false,
+        managerAction: "",
+        managerTargetName: "",
+        pendingAction: null,
+        editTarget: null,
+        editName: "",
+        editAmount: "",
+        editLoading: false,
+        deleteTarget: null,
+        deleteLoading: false,
+        sellTarget: null,
+        sellPhone: "",
+        sellLoading: false,
+        sellStatus: "",
+        sellError: ""
       },
-      async getProducts() {
-        try {
-          const res = await axios.get(`${BASE_URL}/products`, { headers: this.getHeaders() })
-          this.products = res.data.data
-          this.$nextTick(() => this.initTable())
-        } catch (err) {
-          if (err.response?.status === 401) {
-            window.location.href = "login.html"
-          } else {
-            this.errorMsg = err.response?.data?.error || "Failed to load products"
+      mounted() {
+        if (!localStorage.getItem("token")) { window.location.href = "login.html"; return }
+        const user = JSON.parse(localStorage.getItem("user") || "{}")
+        this.userName = user.full_name || user.email || ""
+        this.getProducts()
+      },
+      methods: {
+        getHeaders() { return { Authorization: `Bearer ${localStorage.getItem("token")}` } },
+
+        async getProducts() {
+          try {
+            const res = await axios.get(`${BASE_URL}/products`, { headers: this.getHeaders() })
+            this.products = res.data.data
+            this.$nextTick(() => this.initTable())
+          } catch (err) {
+            if (err.response?.status === 401) window.location.href = "login.html"
+            else this.errorMsg = err.response?.data?.error || "Failed to load products"
           }
-        }
-      },
-      initTable() {
-        if ($.fn.DataTable.isDataTable("#productsTable")) {
-          $("#productsTable").DataTable().destroy()
-        }
-        this.$nextTick(() => {
-          $("#productsTable").DataTable({ pageLength: 10, order: [[0, "desc"]] })
-        })
-      },
-      async addProduct() {
-        this.errorMsg   = ""
-        this.successMsg = ""
+        },
 
-        if (this.name === "" || this.amount === "") {
-          this.errorMsg = "All fields are required"
-          return
-        }
+        initTable() {
+          if ($.fn.DataTable.isDataTable("#productsTable")) $("#productsTable").DataTable().destroy()
+          this.$nextTick(() => $("#productsTable").DataTable({
+            pageLength: 10, order: [[0, "asc"]], initComplete: function () {
+              $("div.dataTables_filter input").attr("autocomplete", "off")
+            }
+          }))
+        },
 
-        this.loading = true
-        try {
-          await axios.post(`${BASE_URL}/products`, {
-            name: this.name,
-            amount: parseFloat(this.amount)
-          }, { headers: this.getHeaders() })
+        async addProduct() {
+          this.errorMsg = ""; this.successMsg = ""
+          if (!this.name || !this.amount) { this.errorMsg = "All fields are required"; return }
+          this.loading = true
+          try {
+            await axios.post(`${BASE_URL}/products`,
+              { name: this.name, amount: parseFloat(this.amount) },
+              { headers: this.getHeaders() })
+            this.successMsg = "Product added successfully"
+            this.name = ""; this.amount = ""
+            setTimeout(() => window.location.href = "products.html", 1000)
+            await this.getProducts()
+          } catch (err) {
+            if (err.response?.status === 401) window.location.href = "login.html"
+            else this.errorMsg = err.response?.data?.error || "Failed to add product"
+          } finally { this.loading = false }
+        },
 
-          this.successMsg = "Product added successfully"
-          this.name   = ""
-          this.amount = ""
-          setTimeout(() => window.location.href = "products.html", 1000)
-          await this.getProducts()
-        } catch (err) {
-          this.errorMsg = err.response?.data?.error || "Failed to add product"
-        } finally {
-          this.loading = false
-        }
-      },
-      async makeSale(product) {
-        if (!confirm(`Create a sale for "${product.name}" (KES ${product.amount.toLocaleString()})?`)) return
+        // ── Manager gate ──────────────────────────────────────
+        // Bootstrap opens managerModal via data-bs-toggle on the row button.
+        // openEditFlow / openDeleteFlow just set pendingAction + data.
+        // confirmManagerAction verifies password then runs pendingAction.
+        confirmManagerAction() {
+          if (this.managerPassword !== MGR_PASSWORD) {
+            this.managerError = "Incorrect password. Try again."
+            this.managerPassword = ""; return
+          }
+          this.managerLoading = true
+          bootstrap.Modal.getInstance(document.getElementById("managerModal")).hide()
+          this.$nextTick(() => { this.pendingAction(); this.managerLoading = false })
+        },
 
-        try {
-          await axios.post(`${BASE_URL}/sales`, {
-            product_id: product.id
-          }, { headers: this.getHeaders() })
+        // ── Edit ──────────────────────────────────────────────
+        openEditFlow(product) {
+          this.managerAction = "edit"; this.managerTargetName = product.name
+          this.managerPassword = ""; this.managerError = ""
+          // After manager approves, open the edit modal
+          this.pendingAction = () => {
+            this.editTarget = product
+            this.editName = product.name
+            this.editAmount = product.amount
+            new bootstrap.Modal(document.getElementById("editModal")).show()
+          }
+        },
 
-          this.successMsg = `Sale created for ${product.name}`
-          setTimeout(() => window.location.href = "sales.html", 800)
-        } catch (err) {
-          this.errorMsg = err.response?.data?.error || "Failed to create sale"
-        }
-      },
-      formatDate(dt) {
-        return new Date(dt).toLocaleString()
-      },
-      logout() {
-        localStorage.removeItem("token")
-        localStorage.removeItem("user")
-        window.location.href = "login.html"
+        async saveEdit() {
+          this.errorMsg = ""; this.successMsg = ""
+          if (!this.editName || !this.editAmount) { this.errorMsg = "All fields are required"; return }
+          this.editLoading = true
+          try {
+            await axios.put(`${BASE_URL}/products`,
+              { id: this.editTarget.id, name: this.editName, amount: parseFloat(this.editAmount) },
+              { headers: this.getHeaders() })
+            this.successMsg = "Product updated"
+            bootstrap.Modal.getInstance(document.getElementById("editModal")).hide()
+            setTimeout(() => window.location.href = "products.html", 1000)
+            await this.getProducts()
+          } catch (err) {
+            if (err.response?.status === 401) window.location.href = "login.html"
+            else this.errorMsg = err.response?.data?.error || "Failed to update product"
+          } finally { this.editLoading = false }
+        },
+
+        // ── Delete ────────────────────────────────────────────
+        openDeleteFlow(product) {
+          this.managerAction = "delete"; this.managerTargetName = product.name
+          this.managerPassword = ""; this.managerError = ""
+          this.deleteTarget = product
+          // After manager approves, open the delete confirmation modal
+          this.pendingAction = () => {
+            new bootstrap.Modal(document.getElementById("deleteModal")).show()
+          }
+        },
+
+        async confirmDelete() {
+          this.errorMsg = ""; this.successMsg = ""
+          this.deleteLoading = true
+          try {
+            await axios.delete(`${BASE_URL}/products`,
+              { data: { id: this.deleteTarget.id }, headers: this.getHeaders() })
+            this.successMsg = `"${this.deleteTarget.name}" deleted`
+            bootstrap.Modal.getInstance(document.getElementById("deleteModal")).hide()
+            setTimeout(() => window.location.href = "products.html", 1000)
+            await this.getProducts()
+          } catch (err) {
+            if (err.response?.status === 401) window.location.href = "login.html"
+            else this.errorMsg = err.response?.data?.error || "Failed to delete product"
+          } finally { this.deleteLoading = false }
+        },
+
+        // ── Sell ──────────────────────────────────────────────
+        // Bootstrap opens sellModal via data-bs-toggle on the row button.
+        openSellModal(product) {
+          this.sellTarget = product; this.sellPhone = ""
+          this.sellLoading = false; this.sellStatus = ""; this.sellError = ""
+        },
+
+        async processSell() {
+          this.sellError = ""; this.sellStatus = ""
+          const phone = this.sellPhone.trim()
+          if (!phone || phone.length < 9) {
+            this.sellStatus = "error"; this.sellError = "Enter a valid 9-digit number e.g. 712345678"; return
+          }
+          this.sellLoading = true
+          try {
+            const saleRes = await axios.post(`${BASE_URL}/sales`,
+              { product_id: this.sellTarget.id },
+              { headers: this.getHeaders() })
+            await axios.post(`${BASE_URL}/stk-push`,
+              { sale_id: saleRes.data.sale_id, amount: this.sellTarget.amount, phone_number: `254${phone}` },
+              { headers: this.getHeaders() })
+            this.sellStatus = "sent"
+            setTimeout(() => {
+              bootstrap.Modal.getInstance(document.getElementById("sellModal")).hide()
+              window.location.href = "sales.html"
+            }, 1500)
+          } catch (err) {
+            if (err.response?.status === 401) window.location.href = "login.html"
+            else { this.sellStatus = "error"; this.sellError = err.response?.data?.error || "Failed to process sale" }
+          } finally { this.sellLoading = false }
+        },
+
+        formatDate(dt) { return new Date(dt).toLocaleString() },
+        logout() { localStorage.removeItem("token"); localStorage.removeItem("user"); window.location.href = "login.html" }
       }
-    }
-  })
-</script>
+    })
+  </script>
 </body>
+
 </html>

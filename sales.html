@@ -25,7 +25,9 @@
         <nav class="navbar navbar-dark px-4 py-2 mb-4">
             <span class="navbar-brand fw-bold">🛒 POS System</span>
             <div class="d-flex align-items-center gap-3">
+                <a href="dashboard.html" class="text-white text-decoration-none">Dashboard</a>
                 <a href="products.html" class="text-white text-decoration-none">Products</a>
+                <a href="stock.html" class="text-white text-decoration-none">Stock</a>
                 <a href="sales.html" class="text-white text-decoration-none">Sales</a>
                 <span class="text-white-50 small">{{ userName }}</span>
                 <button class="btn btn-sm btn-outline-light" @click="logout">Logout</button>
@@ -33,8 +35,7 @@
         </nav>
 
         <div class="container">
-
-            <div v-if="errorMsg" class="alert alert-danger py-2">{{ errorMsg }}</div>
+            <div v-if="errorMsg" class="alert alert-danger  py-2">{{ errorMsg }}</div>
             <div v-if="successMsg" class="alert alert-success py-2">{{ successMsg }}</div>
 
             <!-- Add Sale -->
@@ -45,13 +46,12 @@
                         <div class="col-md-8">
                             <select v-model="selectedProductId" class="form-select">
                                 <option value="">— Select a product —</option>
-                                <option v-for="p in products" :key="p.id" :value="p.id">
-                                    {{ p.name }}
-                                </option>
+                                <option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }}</option>
                             </select>
                         </div>
                         <div class="col-md-4">
                             <button class="btn btn-primary w-100" @click="addSale" :disabled="submitting">
+                                <span v-if="submitting" class="spinner-border spinner-border-sm me-1"></span>
                                 {{ submitting ? 'Processing…' : 'Add Sale' }}
                             </button>
                         </div>
@@ -71,7 +71,7 @@
                                 <th>Amount (KES)</th>
                                 <th>Payment Status</th>
                                 <th>Date</th>
-                                <th>Payments</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -90,66 +90,106 @@
                                 </td>
                                 <td>{{ formatDate(sale.created_at) }}</td>
                                 <td>
-                                    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal"
-                                        data-bs-target="#paymentModal" @click="openPaymentModal(sale)">
-                                        View Payment
-                                    </button>
+                                    <!-- Bootstrap opens modal; @click only sets Vue data -->
+                                    <button class="btn btn-sm btn-primary me-1" data-bs-toggle="modal"
+                                        data-bs-target="#paymentModal" @click="openPaymentModal(sale)">Payment</button>
+                                    <button class="btn btn-sm btn-danger" data-bs-toggle="modal"
+                                        data-bs-target="#managerModal" @click="openDeleteFlow(sale)">Delete</button>
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
+        </div>
 
-        </div><!-- /container -->
-
-        <!-- Payment Modal (single, outside v-for) -->
-        <div class="modal fade" id="paymentModal" tabindex="-1" aria-labelledby="paymentModalLabel" aria-hidden="true">
-            <div class="modal-dialog">
+        <!-- ── Manager Password Modal ── -->
+        <div class="modal fade" id="managerModal" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered modal-sm">
                 <div class="modal-content">
-
                     <div class="modal-header">
-                        <h5 class="modal-title" id="paymentModalLabel">
-                            Payments — {{ currentSaleName }}
-                        </h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"
-                            @click="resetModal"></button>
+                        <h5 class="modal-title">Manager Authorisation</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
-
                     <div class="modal-body">
+                        <p class="text-muted small mb-2">Enter manager password to delete this sale record.</p>
+                        <input v-model="managerPassword" type="password" class="form-control"
+                            placeholder="Manager password" @keyup.enter="confirmManagerAction" />
+                        <div v-if="managerError" class="text-danger small mt-1">{{ managerError }}</div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button class="btn btn-dark" @click="confirmManagerAction" :disabled="managerLoading">
+                            <span v-if="managerLoading" class="spinner-border spinner-border-sm me-1"></span>
+                            Confirm
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-                        <!-- STK Push feedback -->
-                        <div v-if="stkErrorMsg" class="alert alert-danger py-2">{{ stkErrorMsg }}</div>
+        <!-- ── Delete Confirmation Modal ── -->
+        <div class="modal fade" id="deleteModal" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header border-0">
+                        <h5 class="modal-title text-danger">Delete Sale</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        Delete sale for <strong>{{ deleteTarget ? (deleteTarget.product ? deleteTarget.product.name :
+                            'this product') : '' }}</strong>
+                        on <em>{{ deleteTarget ? formatDate(deleteTarget.created_at) : '' }}</em>?
+                        This cannot be undone.
+                    </div>
+                    <div class="modal-footer border-0">
+                        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button class="btn btn-danger" @click="confirmDelete" :disabled="deleteLoading">
+                            <span v-if="deleteLoading" class="spinner-border spinner-border-sm me-1"></span>
+                            Yes, Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Payment Modal ── -->
+        <div class="modal fade" id="paymentModal" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Payments — {{ currentSaleName }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" @click="resetModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div v-if="stkErrorMsg" class="alert alert-danger  py-2">{{ stkErrorMsg }}</div>
                         <div v-if="stkSuccessMsg" class="alert alert-success py-2">{{ stkSuccessMsg }}</div>
 
-                        <!-- STK Push form -->
                         <div v-if="!currentSalePaid" class="mb-4">
                             <h6 class="fw-semibold mb-3">Request M-Pesa Payment</h6>
                             <div class="mb-3">
-                                <label for="phoneInput" class="form-label">Phone Number</label>
-                                <input type="tel" class="form-control" id="phoneInput" v-model="phoneNumber"
-                                    placeholder="254712345678" :disabled="stkSubmitting" />
-                                <div class="form-text">Enter number in format 254XXXXXXXXX</div>
+                                <label class="form-label">Phone Number</label>
+                                <input type="tel" class="form-control" v-model="phoneNumber" placeholder="254712345678"
+                                    :disabled="stkSubmitting" />
+                                <div class="form-text">Format: 254XXXXXXXXX</div>
                             </div>
                             <button class="btn btn-success w-100" @click="makePayment"
                                 :disabled="stkSubmitting || !phoneNumber">
                                 <span v-if="stkSubmitting">
-                                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-                                    Sending STK Push…
+                                    <span class="spinner-border spinner-border-sm me-1"></span>Sending…
                                 </span>
                                 <span v-else>📲 Send STK Push (KES {{ currentSaleAmount.toLocaleString() }})</span>
                             </button>
                         </div>
 
-                        <!-- Existing payment details -->
                         <h6 class="fw-semibold mb-2">Payment Record</h6>
                         <table class="table table-sm">
                             <thead>
                                 <tr>
                                     <th>#</th>
-                                    <th>Transaction Code</th>
+                                    <th>Trans Code</th>
                                     <th>Amount</th>
-                                    <th>Phone Number</th>
+                                    <th>Phone</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -164,80 +204,54 @@
                                 </tr>
                             </tbody>
                         </table>
-
                     </div>
-
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"
-                            @click="resetModal">Close</button>
+                        <button class="btn btn-secondary" data-bs-dismiss="modal" @click="resetModal">Close</button>
                     </div>
-
                 </div>
             </div>
-        </div><!-- /modal -->
+        </div>
 
     </div><!-- /app -->
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
-        integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI"
-        crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/vue@2.7.14/dist/vue.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 
     <script>
         const BASE_URL = "http://127.0.0.1:5000"
+        const MGR_PASSWORD = "abcdef"
 
         new Vue({
             el: "#app",
             data: {
-                sales: [],
-                products: [],
-                selectedProductId: "",
-                submitting: false,
-                errorMsg: "",
-                successMsg: "",
-                userName: "",
-
-                // Modal / payment state
-                currentSaleId: null,
-                currentSaleName: "",
-                currentSaleAmount: 0,
-                currentSalePaid: false,
-                currentPayment: null,
-                phoneNumber: "",
-                stkSubmitting: false,
-                stkErrorMsg: "",
-                stkSuccessMsg: ""
+                sales: [], products: [], selectedProductId: "",
+                submitting: false, errorMsg: "", successMsg: "", userName: "",
+                managerPassword: "", managerError: "", managerLoading: false, pendingAction: null,
+                deleteTarget: null, deleteLoading: false,
+                currentSaleId: null, currentSaleName: "", currentSaleAmount: 0,
+                currentSalePaid: false, currentPayment: null,
+                phoneNumber: "", stkSubmitting: false, stkErrorMsg: "", stkSuccessMsg: ""
             },
             mounted() {
-                if (!localStorage.getItem("token")) {
-                    window.location.href = "login.html"
-                    return
-                }
+                if (!localStorage.getItem("token")) { window.location.href = "login.html"; return }
                 const user = JSON.parse(localStorage.getItem("user") || "{}")
                 this.userName = user.full_name || user.email || ""
                 this.getProducts()
                 this.getSales()
             },
             methods: {
-                getHeaders() {
-                    const token = localStorage.getItem("token")
-                    return { Authorization: `Bearer ${token}` }
-                },
+                getHeaders() { return { Authorization: `Bearer ${localStorage.getItem("token")}` } },
 
                 async getProducts() {
                     try {
                         const res = await axios.get(`${BASE_URL}/products`, { headers: this.getHeaders() })
                         this.products = res.data.data
                     } catch (err) {
-                        if (err.response?.status === 401) {
-                            window.location.href = "login.html"
-                        } else {
-                            this.errorMsg = err.response?.data?.error || "Failed to load products"
-                        }
+                        if (err.response?.status === 401) window.location.href = "login.html"
                     }
                 },
 
@@ -247,152 +261,141 @@
                         this.sales = res.data.data
                         this.$nextTick(() => this.initTable())
                     } catch (err) {
-                        if (err.response?.status === 401) {
-                            window.location.href = "login.html"
-                        } else {
-                            this.errorMsg = err.response?.data?.error || "Failed to load sales"
-                        }
+                        if (err.response?.status === 401) window.location.href = "login.html"
+                        else this.errorMsg = err.response?.data?.error || "Failed to load sales"
                     }
                 },
 
                 async addSale() {
-                    this.errorMsg = ""
-                    this.successMsg = ""
-
-                    if (!this.selectedProductId) {
-                        this.errorMsg = "Please select a product."
-                        return
-                    }
-
+                    this.errorMsg = ""; this.successMsg = ""
+                    if (!this.selectedProductId) { this.errorMsg = "Please select a product."; return }
                     this.submitting = true
                     try {
-                        await axios.post(
-                            `${BASE_URL}/sales`,
-                            { product_id: this.selectedProductId },
-                            { headers: this.getHeaders() }
-                        )
+                        await axios.post(`${BASE_URL}/sales`, { product_id: this.selectedProductId }, { headers: this.getHeaders() })
                         this.successMsg = "Sale created successfully."
                         this.selectedProductId = ""
                         setTimeout(() => window.location.href = "sales.html", 1000)
                         await this.getSales()
                     } catch (err) {
-                        if (err.response?.status === 401) {
-                            window.location.href = "login.html"
-                        } else {
-                            this.errorMsg = err.response?.data?.error || "Failed to create sale"
-                        }
-                    } finally {
-                        this.submitting = false
+                        if (err.response?.status === 401) window.location.href = "login.html"
+                        else this.errorMsg = err.response?.data?.error || "Failed to create sale"
+                    } finally { this.submitting = false }
+                },
+
+                // ── Manager gate ──────────────────────────────────────
+                // Bootstrap opens managerModal via data-bs-toggle on the button.
+                // openDeleteFlow() just sets the pending action and target.
+                // confirmManagerAction() verifies password then runs pendingAction.
+                confirmManagerAction() {
+                    if (this.managerPassword !== MGR_PASSWORD) {
+                        this.managerError = "Incorrect password. Try again."
+                        this.managerPassword = ""; return
+                    }
+                    this.managerLoading = true
+                    bootstrap.Modal.getInstance(document.getElementById("managerModal")).hide()
+                    this.$nextTick(() => { this.pendingAction(); this.managerLoading = false })
+                },
+
+                // ── Delete ────────────────────────────────────────────
+                openDeleteFlow(sale) {
+                    this.deleteTarget = sale
+                    this.managerPassword = ""; this.managerError = ""
+                    // After manager approves, open the delete confirmation modal
+                    this.pendingAction = () => {
+                        new bootstrap.Modal(document.getElementById("deleteModal")).show()
                     }
                 },
 
-                // Called when "View Payment" button is clicked — populates modal state
+                async confirmDelete() {
+                    this.errorMsg = ""; this.successMsg = ""
+                    this.deleteLoading = true
+                    try {
+                        await axios.delete(`${BASE_URL}/sales`,
+                            { data: { sale_id: this.deleteTarget.id }, headers: this.getHeaders() })
+                        this.successMsg = "Sale deleted."
+                        bootstrap.Modal.getInstance(document.getElementById("deleteModal")).hide()
+                        setTimeout(() => window.location.href = "sales.html", 1000)
+                        await this.getSales()
+                    } catch (err) {
+                        if (err.response?.status === 401) window.location.href = "login.html"
+                        else this.errorMsg = err.response?.data?.error || "Failed to delete sale"
+                    } finally { this.deleteLoading = false }
+                },
+
+                // ── Payment ───────────────────────────────────────────
+                // Bootstrap opens paymentModal via data-bs-toggle on the button.
+                // openPaymentModal() only populates the Vue data.
                 openPaymentModal(sale) {
                     this.currentSaleId = sale.id
-                    this.currentSaleName = sale.product ? sale.product.name : "Unknown Product"
+                    this.currentSaleName = sale.product ? sale.product.name : "Unknown"
                     this.currentSaleAmount = sale.product ? sale.product.amount : 0
-                    this.currentSalePaid = !!sale.payment
+                    this.currentSalePaid = !!(sale.payment && sale.payment.status === "Paid")
                     this.currentPayment = sale.payment || null
-                    this.phoneNumber = ""
-                    this.stkErrorMsg = ""
-                    this.stkSuccessMsg = ""
+                    this.phoneNumber = ""; this.stkErrorMsg = ""; this.stkSuccessMsg = ""
                 },
 
-                // Sends STK Push request to backend
                 async makePayment() {
-                    this.stkErrorMsg = ""
-                    this.stkSuccessMsg = ""
-
-                    // Basic validation
+                    this.stkErrorMsg = ""; this.stkSuccessMsg = ""
                     const phone = this.phoneNumber.trim()
-                    if (!phone) {
-                        this.stkErrorMsg = "Please enter a phone number."
-                        return
-                    }
-                    if (!/^254\d{9}$/.test(phone)) {
-                        this.stkErrorMsg = "Phone number must be in the format 254XXXXXXXXX (12 digits)."
-                        return
-                    }
-
+                    if (!phone) { this.stkErrorMsg = "Please enter a phone number."; return }
+                    if (!/^254\d{9}$/.test(phone)) { this.stkErrorMsg = "Format: 254XXXXXXXXX (12 digits)."; return }
                     this.stkSubmitting = true
                     try {
-                        await axios.post(
-                            `${BASE_URL}/stk-push`,
-                            {
-                                phone_number: phone,
-                                sale_id: this.currentSaleId,
-                                amount: this.currentSaleAmount
-                            },
-                            { headers: this.getHeaders() }
-                        )
-                        this.stkSuccessMsg = "STK Push sent! Ask the customer to check their phone and enter their M-Pesa PIN."
+                        await axios.post(`${BASE_URL}/stk-push`,
+                            { phone_number: phone, sale_id: this.currentSaleId, amount: this.currentSaleAmount },
+                            { headers: this.getHeaders() })
+                        this.stkSuccessMsg = "STK Push sent! Ask customer to enter M-Pesa PIN."
                         this.phoneNumber = ""
-                        // Poll for payment confirmation
                         this.pollPaymentStatus(this.currentSaleId)
                     } catch (err) {
-                        if (err.response?.status === 401) {
-                            window.location.href = "login.html"
-                        } else {
-                            this.stkErrorMsg = err.response?.data?.error || "Failed to initiate STK Push. Please try again."
-                        }
-                    } finally {
-                        this.stkSubmitting = false
-                    }
+                        if (err.response?.status === 401) window.location.href = "login.html"
+                        else this.stkErrorMsg = err.response?.data?.error || "Failed to initiate STK Push."
+                    } finally { this.stkSubmitting = false }
                 },
 
-                // Poll every 3s for up to 60s waiting for Safaricom callback to update payment
                 pollPaymentStatus(saleId) {
                     let attempts = 0
-                    const maxAttempts = 20
                     const interval = setInterval(async () => {
                         attempts++
                         try {
                             const res = await axios.get(`${BASE_URL}/sales`, { headers: this.getHeaders() })
-                            const updatedSales = res.data.data
-                            const updatedSale = updatedSales.find(s => s.id === saleId)
-
-                            if (updatedSale && updatedSale.payment && updatedSale.payment.trans_code) {
+                            const updated = res.data.data.find(s => s.id === saleId)
+                            if (updated?.payment?.trans_code) {
                                 clearInterval(interval)
-                                this.currentPayment = updatedSale.payment
+                                this.currentPayment = updated.payment
                                 this.currentSalePaid = true
-                                this.stkSuccessMsg = `✅ Payment confirmed! Code: ${updatedSale.payment.trans_code}`
-                                this.sales = updatedSales
+                                this.stkSuccessMsg = `✅ Payment confirmed! Code: ${updated.payment.trans_code}`
+                                this.sales = res.data.data
                                 this.$nextTick(() => this.initTable())
-                            } else if (attempts >= maxAttempts) {
+                            } else if (attempts >= 20) {
                                 clearInterval(interval)
-                                this.stkErrorMsg = "Payment not confirmed yet. Please refresh and check the payment record."
+                                this.stkErrorMsg = "Not confirmed yet. Refresh to check."
                             }
-                        } catch (err) {
-                            clearInterval(interval)
-                        }
+                        } catch { clearInterval(interval) }
                     }, 3000)
                 },
 
                 resetModal() {
-                    this.phoneNumber = ""
-                    this.stkErrorMsg = ""
-                    this.stkSuccessMsg = ""
-                    this.stkSubmitting = false
+                    this.phoneNumber = ""; this.stkErrorMsg = ""
+                    this.stkSuccessMsg = ""; this.stkSubmitting = false
                 },
 
                 initTable() {
-                    if ($.fn.DataTable.isDataTable("#salesTable")) {
-                        $("#salesTable").DataTable().destroy()
-                    }
+                    if ($.fn.DataTable.isDataTable("#salesTable")) $("#salesTable").DataTable().destroy()
                     this.$nextTick(() => {
-                        $("#salesTable").DataTable({ pageLength: 10, order: [[0, "desc"]] })
+                        const table = $("#salesTable").DataTable({ pageLength: 10, order: [[0, "asc"]] })
+                        // Clear only the visual input, not the DataTables search state
+                        setTimeout(() => {
+                            $("#salesTable").closest(".dataTables_wrapper")
+                                .find(".dataTables_filter input")
+                                .val("")
+                                .attr("autocomplete", "nope")
+                        }, 1000)
                     })
                 },
 
-                formatDate(dt) {
-                    return new Date(dt).toLocaleString()
-                },
-
-                logout() {
-                    localStorage.removeItem("token")
-                    localStorage.removeItem("user")
-                    window.location.href = "login.html"
-                }
+                formatDate(dt) { return new Date(dt).toLocaleString() },
+                logout() { localStorage.removeItem("token"); localStorage.removeItem("user"); window.location.href = "login.html" }
             }
         })
     </script>
