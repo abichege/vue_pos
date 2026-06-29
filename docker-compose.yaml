@@ -1,0 +1,7 @@
+services:
+  vue_api:
+    build: .
+    image: vue_api
+    container_name: pos_frontend
+    ports:
+      - '6000:80'
