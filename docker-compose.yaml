@@ -4,4 +4,4 @@ services:
     image: vue_api
     container_name: pos_frontend
     ports:
-      - '6000:80'
+      - '5050:80'
